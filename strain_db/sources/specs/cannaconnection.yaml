@@ -1,0 +1,83 @@
+# CannaConnection (https://www.cannaconnection.com/strains)
+#
+# !! UNVERIFIED SELECTORS !!
+# Written without live access. Calibrate with
+# `strain-db probe cannaconnection <url>`.
+#
+# CannaConnection is server-rendered, so the CSS block and the label/value
+# `pairs` table are the primary strategies here - there is unlikely to be an
+# app-state blob to read.
+
+name: cannaconnection
+base_url: https://www.cannaconnection.com
+rating_scale: 5
+
+listing:
+  mode: [sitemap, html]
+  sitemaps:
+    - https://www.cannaconnection.com/sitemap.xml
+  detail_url_re: "cannaconnection\\.com/strains/[a-z0-9-]+$"
+
+  url_pattern: "https://www.cannaconnection.com/strains?page={page}"
+  page_start: 1
+  max_pages: 150
+  link_sel: "a[href*='/strains/']"
+  link_attr: href
+
+detail:
+  jsonld_paths:
+    name: name
+    description: description
+    rating: aggregateRating.ratingValue
+    review_count: aggregateRating.reviewCount
+    images: image
+    breeder: brand.name
+
+  css:
+    name:
+      - sel: "h1"
+      - sel: "meta[property='og:title']"
+        attr: content
+    description:
+      - sel: "div[class*='description'] p"
+        join: " "
+      - sel: "meta[name='description']"
+        attr: content
+    images:
+      - sel: "meta[property='og:image']"
+        attr: content
+      - sel: "img[class*='strain']"
+        attr: src
+        many: true
+    effects:
+      sel: "[class*='effect'] li, [class*='effect'] a"
+      many: true
+    flavors:
+      sel: "[class*='flavor'] li, [class*='taste'] li, [class*='aroma'] li"
+      many: true
+    awards:
+      sel: "[class*='award'] li"
+      many: true
+
+  # Grow specs on this site render as a label/value table.
+  pairs:
+    row: "table tr, dl > div, [class*='spec'] [class*='row'], li[class*='spec']"
+    label: "th, dt, [class*='label'], strong, b"
+    value: "td, dd, [class*='value'], span"
+
+  pair_fields:
+    type: ["type", "genetics", "variety", "sativa/indica"]
+    thc: ["thc"]
+    cbd: ["cbd"]
+    breeder: ["breeder", "seedbank", "seed bank"]
+    lineage: ["genetics", "parents", "lineage", "crossing"]
+    flowering_time: ["flowering time", "flowering period", "flowering"]
+    yield_indoor: ["yield indoor", "indoor yield", "yield (indoor)"]
+    yield_outdoor: ["yield outdoor", "outdoor yield", "yield (outdoor)"]
+    height_indoor: ["height indoor", "indoor height"]
+    height_outdoor: ["height outdoor", "outdoor height"]
+    harvest_month: ["harvest", "harvest month", "harvest time"]
+    environment: ["climate", "environment", "grows"]
+    difficulty: ["difficulty", "grow difficulty", "level"]
+    effects: ["effect", "effects"]
+    flavors: ["flavor", "flavour", "taste", "aroma"]

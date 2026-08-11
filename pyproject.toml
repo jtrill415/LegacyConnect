@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "strain-db"
+version = "0.1.0"
+description = "Build a normalized cannabis strain database from multiple public sources"
+requires-python = ">=3.10"
+dependencies = [
+    "requests>=2.31",
+    "beautifulsoup4>=4.12",
+    "lxml>=4.9",
+    "PyYAML>=6.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7.4"]
+
+[project.scripts]
+strain-db = "strain_db.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["strain_db*"]
+
+[tool.setuptools.package-data]
+strain_db = ["sources/specs/*.yaml"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

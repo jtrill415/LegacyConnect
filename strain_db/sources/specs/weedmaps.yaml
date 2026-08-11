@@ -1,0 +1,85 @@
+# Weedmaps (https://weedmaps.com/strains)
+#
+# !! UNVERIFIED SELECTORS !!
+# Written without live access (egress to weedmaps.com is blocked in the build
+# environment). Calibrate with `strain-db probe weedmaps <url>`.
+#
+# Weedmaps serves its strain catalogue from a JSON API that the web app itself
+# calls, which is both more stable and far lighter than rendering HTML. If the
+# api discovery mode 404s, the sitemap and html modes below take over.
+
+name: weedmaps
+base_url: https://weedmaps.com
+rating_scale: 5
+
+listing:
+  mode: [api, sitemap, html]
+
+  api_url_pattern: "https://api-g.weedmaps.com/discovery/v1/strains?page={page}&page_size={page_size}"
+  page_size: 100
+  page_start: 1
+  max_pages: 300
+  items_path:
+    - data.strains
+    - data
+    - strains
+  slug_key: slug
+  detail_url_pattern: "{base}/strains/{slug}"
+
+  sitemaps:
+    - https://weedmaps.com/sitemap.xml
+  detail_url_re: "weedmaps\\.com/strains/[a-z0-9-]+$"
+
+  url_pattern: "https://weedmaps.com/strains?page={page}"
+  link_sel: "a[href*='/strains/']"
+  link_attr: href
+
+detail:
+  state_root: props.pageProps.strain
+  state_anchor_key: strain
+
+  state_paths:
+    name: name
+    source_id: id
+    type: category
+    description: description
+    thc: thc_percentage
+    cbd: cbd_percentage
+    rating: rating
+    review_count: reviews_count
+    # Whole objects, so any score/percentage the API reports is preserved.
+    effects: effects
+    flavors: flavors
+    medical: conditions
+    parents: genetics[*].name
+    lineage: genetics_description
+    images: avatar_image.original_url
+
+  jsonld_paths:
+    name: name
+    description: description
+    rating: aggregateRating.ratingValue
+    review_count: aggregateRating.reviewCount
+    images: image
+
+  css:
+    name: "h1"
+    type:
+      - sel: "[data-testid='strain-type']"
+      - sel: "[class*='StrainType']"
+    description:
+      - sel: "[data-testid='strain-description']"
+      - sel: "meta[name='description']"
+        attr: content
+    thc:
+      sel: "[data-testid*='thc'], [class*='thc']"
+      regex: "([\\d.]+\\s*%?\\s*(?:-\\s*[\\d.]+\\s*%?)?)"
+    cbd:
+      sel: "[data-testid*='cbd'], [class*='cbd']"
+      regex: "([\\d.]+\\s*%?\\s*(?:-\\s*[\\d.]+\\s*%?)?)"
+    effects:
+      sel: "[data-testid*='effect'] li, [class*='effect'] li"
+      many: true
+    flavors:
+      sel: "[data-testid*='flavor'] li, [class*='flavor'] li"
+      many: true

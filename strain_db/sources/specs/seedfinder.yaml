@@ -1,0 +1,77 @@
+# SeedFinder (https://seedfinder.eu/en)
+#
+# !! UNVERIFIED SELECTORS !!
+# Written without live access. Calibrate with
+# `strain-db probe seedfinder <url>`.
+#
+# SeedFinder is the strongest source for *genetics*: breeder attribution and
+# deep parent lineage, which the consumer-facing sites mostly lack. It is an
+# older, table-heavy site with alphabetical indexes rather than numbered pages,
+# so discovery uses `links` mode with a per-letter seed list.
+
+name: seedfinder
+base_url: https://en.seedfinder.eu
+rating_scale: 10  # SeedFinder rates out of 10; normalized to 5 on ingest
+
+listing:
+  mode: [links, sitemap]
+  seed_urls:
+    - "https://en.seedfinder.eu/database/strains/alphabetical/{letter}/"
+  letters: "abcdefghijklmnopqrstuvwxyz"
+  # Strain pages look like /strain-info/<Strain>/<Breeder>/
+  detail_url_re: "seedfinder\\.eu/strain-info/[^/]+/[^/]+/?$"
+  # Follow in-index pagination but nothing else.
+  follow_url_re: "seedfinder\\.eu/database/strains/alphabetical/[a-z]/[0-9]+"
+  max_pages: 800
+
+  sitemaps:
+    - https://en.seedfinder.eu/sitemap.xml
+
+detail:
+  css:
+    name:
+      - sel: "h1"
+      - sel: "meta[property='og:title']"
+        attr: content
+    breeder:
+      - sel: "a[href*='/breeder/']"
+      - sel: "[class*='breeder'] a"
+    description:
+      - sel: "div[class*='description']"
+        join: " "
+      - sel: "meta[name='description']"
+        attr: content
+    lineage:
+      - sel: "a[href*='/strain-info/'][class*='parent']"
+        join: " x "
+      - sel: "[class*='genetic'] a"
+        join: " x "
+    parents:
+      sel: "[class*='lineage'] a[href*='/strain-info/'], [class*='genetic'] a[href*='/strain-info/']"
+      many: true
+    awards:
+      sel: "[class*='award'] li, [class*='medal'] li"
+      many: true
+    images:
+      - sel: "meta[property='og:image']"
+        attr: content
+
+  pairs:
+    row: "table tr, dl > div, [class*='info'] tr"
+    label: "th, dt, td:first-child, strong"
+    value: "td:last-child, dd, span"
+
+  pair_fields:
+    type: ["type", "indica / sativa", "indica/sativa", "variety", "genetics"]
+    flowering_time: ["flowering time", "flowering", "indoor flowering"]
+    environment: ["environment", "grows", "cultivation"]
+    yield_indoor: ["yield indoor", "indoor yield"]
+    yield_outdoor: ["yield outdoor", "outdoor yield"]
+    height_indoor: ["height indoor", "indoor height"]
+    height_outdoor: ["height outdoor", "outdoor height"]
+    harvest_month: ["harvest", "outdoor harvest"]
+    thc: ["thc"]
+    cbd: ["cbd"]
+    lineage: ["genetics", "parents", "lineage", "crossing"]
+    breeder: ["breeder", "seedbank"]
+    awards: ["awards", "medals"]

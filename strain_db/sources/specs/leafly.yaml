@@ -1,0 +1,87 @@
+# Leafly (https://www.leafly.com/strains)
+#
+# !! UNVERIFIED SELECTORS !!
+# These paths were written without access to a live page (the build environment
+# blocks outbound requests to leafly.com). Run `strain-db probe leafly <url>`
+# on a network that can reach the site; it prints which strategies fire and what
+# the app-state payload actually looks like, then correct this file.
+#
+# Leafly is a Next.js app, so `state_paths` (__NEXT_DATA__) is the strategy most
+# likely to work and to carry the richest data. The css block is a fallback.
+
+name: leafly
+base_url: https://www.leafly.com
+rating_scale: 5
+
+listing:
+  mode: [sitemap, html]
+  sitemaps:
+    - https://www.leafly.com/sitemap.xml
+  detail_url_re: "leafly\\.com/strains/[a-z0-9-]+$"
+  # Fallback if the sitemap index is not reachable:
+  url_pattern: "https://www.leafly.com/strains?page={page}"
+  page_start: 1
+  max_pages: 200
+  link_sel: "a[href*='/strains/']"
+  link_attr: href
+
+detail:
+  state_root: props.pageProps.strain
+  # If Leafly moves the payload, deep-search for a dict stored under this key.
+  state_anchor_key: strain
+
+  state_paths:
+    name: name
+    source_id: id
+    type: category
+    description: description
+    thc: thcAvg
+    cbd: cbdAvg
+    rating: rating
+    review_count: reviewCount
+    # Extract whole objects, not just names: these carry a relative-frequency
+    # score that normalize_terms preserves and merge.py ranks on.
+    effects: effects
+    negatives: negatives
+    medical: conditions
+    flavors: flavors
+    terpenes: terps
+    parents: phenotypes[*].name
+    lineage: lineage
+    images: imageUrl
+
+  jsonld_paths:
+    name: name
+    description: description
+    rating: aggregateRating.ratingValue
+    review_count: aggregateRating.reviewCount
+    images: image
+
+  css:
+    name: "h1"
+    type:
+      - sel: "[data-testid='strain-category']"
+      - sel: "a[href*='/strains/lists/category/']"
+    description:
+      - sel: "[data-testid='strain-description']"
+      - sel: "meta[name='description']"
+        attr: content
+    thc:
+      sel: "[data-testid='thc-percentage'], .thc-percentage"
+      regex: "([\\d.]+\\s*%?\\s*(?:-\\s*[\\d.]+\\s*%?)?)"
+    cbd:
+      sel: "[data-testid='cbd-percentage'], .cbd-percentage"
+      regex: "([\\d.]+\\s*%?\\s*(?:-\\s*[\\d.]+\\s*%?)?)"
+    effects:
+      sel: "[data-testid='effect-name'], [class*='effect'] li"
+      many: true
+    flavors:
+      sel: "[data-testid='flavor-name'], [class*='flavor'] li"
+      many: true
+    rating:
+      sel: "[data-testid='strain-rating'], [class*='rating']"
+      regex: "([\\d.]+)"
+    images:
+      sel: "img[src*='strain']"
+      attr: src
+      many: true
