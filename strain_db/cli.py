@@ -8,11 +8,14 @@ import logging
 import sys
 from pathlib import Path
 
+from contextlib import contextmanager
+
 from . import probe as probe_mod
 from .http import Client, DEFAULT_UA
 from .merge import group_and_merge
 from .models import Strain
 from .sources import SOURCES
+from .sources.base import load_spec
 from .storage import Database, export
 
 log = logging.getLogger("strain_db")
@@ -50,6 +53,20 @@ def _add_global_options(parser: argparse.ArgumentParser, suppress: bool) -> None
         default=d(False),
         help="Do not consult robots.txt. Off by default; only use where you have "
         "permission or a licensing arrangement with the site.",
+    )
+    parser.add_argument(
+        "--browser",
+        choices=["auto", "never", "always"],
+        default=d("auto"),
+        help="Use a real browser (Playwright) to fetch. 'auto' (default) uses one "
+        "only for sources whose spec sets requires_browser; 'always' forces it "
+        "everywhere; 'never' keeps the plain HTTP client.",
+    )
+    parser.add_argument(
+        "--headful",
+        action="store_true",
+        default=d(False),
+        help="Show the browser window (debugging only; implies --browser always)",
     )
     parser.add_argument("-v", "--verbose", action="count", default=d(0))
 
@@ -114,7 +131,46 @@ def build_parser() -> argparse.ArgumentParser:
     return p
 
 
-def make_client(args) -> Client:
+def wants_browser(args, source_name: str | None = None) -> bool:
+    """Decide whether this fetch should go through a real browser.
+
+    'auto' defers to the site spec's `requires_browser`, so the browser cost is
+    paid only by the sources that actually need it.
+    """
+    mode = getattr(args, "browser", "auto")
+    if getattr(args, "headful", False):
+        return True
+    if mode == "always":
+        return True
+    if mode == "never":
+        return False
+    if source_name is None:
+        return False
+    try:
+        return bool(load_spec(source_name).get("requires_browser", False))
+    except FileNotFoundError:
+        return False
+
+
+def make_client(args, source_name: str | None = None):
+    """Build the fetcher for a source: plain HTTP, or Playwright-backed."""
+    if wants_browser(args, source_name):
+        from .browser import BROWSER_UA, BrowserClient
+
+        # The honest bot UA defeats the purpose here - a protected site rejects
+        # it outright - so use the browser UA unless one was set explicitly.
+        ua = args.user_agent if args.user_agent != DEFAULT_UA else BROWSER_UA
+        log.info("using browser fetcher for %s", source_name or "request")
+        return BrowserClient(
+            cache_dir=Path(args.cache_dir),
+            user_agent=ua,
+            delay=max(args.delay, 1.0),
+            timeout=max(args.timeout, 45.0),
+            respect_robots=not args.ignore_robots,
+            use_cache=not args.no_cache,
+            headless=not getattr(args, "headful", False),
+        )
+
     return Client(
         cache_dir=Path(args.cache_dir),
         user_agent=args.user_agent,
@@ -125,11 +181,22 @@ def make_client(args) -> Client:
     )
 
 
+@contextmanager
+def client_for(args, source_name: str | None = None):
+    """Yield a client and always release browser resources afterwards."""
+    client = make_client(args, source_name)
+    try:
+        yield client
+    finally:
+        if hasattr(client, "close"):
+            client.close()
+
+
 def cmd_crawl(args) -> int:
-    client = make_client(args)
     db = Database(args.db)
     collected: list[Strain] = []
     dump_fh = open(args.dump_raw, "w", encoding="utf-8") if args.dump_raw else None
+    http_stats: dict[str, dict] = {}
 
     try:
         for name in args.sources:
@@ -137,17 +204,27 @@ def cmd_crawl(args) -> int:
             if source_cls is None:
                 log.error("unknown source %r (choose from %s)", name, ", ".join(SOURCES))
                 continue
-            source = source_cls(client)
-            log.info("crawling %s ...", name)
-            count = 0
-            for strain in source.crawl(limit=args.limit):
-                collected.append(strain)
-                count += 1
-                if dump_fh:
-                    dump_fh.write(json.dumps(strain.to_dict(), ensure_ascii=False) + "\n")
-                if count % 25 == 0:
-                    log.info("[%s] %d strains", name, count)
-            log.info("[%s] done: %d strains (%s)", name, count, source.stats)
+            # One client per source, so only the sources that need a browser
+            # start one, and it is torn down as soon as that source is done.
+            with client_for(args, name) as client:
+                source = source_cls(client)
+                log.info("crawling %s ...", name)
+                count = 0
+                for strain in source.crawl(limit=args.limit):
+                    collected.append(strain)
+                    count += 1
+                    if dump_fh:
+                        dump_fh.write(json.dumps(strain.to_dict(), ensure_ascii=False) + "\n")
+                    if count % 25 == 0:
+                        log.info("[%s] %d strains", name, count)
+                log.info("[%s] done: %d strains (%s)", name, count, source.stats)
+                http_stats[name] = dict(client.stats)
+                if client.stats.get("challenges"):
+                    log.warning(
+                        "[%s] hit %d bot challenges; consider a slower --delay",
+                        name,
+                        client.stats["challenges"],
+                    )
     finally:
         if dump_fh:
             dump_fh.close()
@@ -171,21 +248,22 @@ def cmd_crawl(args) -> int:
         written = db.upsert_many(merged)
 
     log.info("wrote %d strains to %s", written, args.db)
-    log.info("http: %s", client.stats)
+    for name, stats in http_stats.items():
+        log.info("http[%s]: %s", name, stats)
     return 0
 
 
 def cmd_discover(args) -> int:
-    client = make_client(args)
-    source = SOURCES[args.source](client)
-    for url in source.discover(limit=args.limit):
-        print(url)
+    with client_for(args, args.source) as client:
+        source = SOURCES[args.source](client)
+        for url in source.discover(limit=args.limit):
+            print(url)
     return 0
 
 
 def cmd_probe(args) -> int:
-    client = make_client(args)
-    report = probe_mod.probe(args.source, args.url, client, save_html=args.save_html)
+    with client_for(args, args.source) as client:
+        report = probe_mod.probe(args.source, args.url, client, save_html=args.save_html)
     print(probe_mod.format_report(report))
     if report.get("looks_like_challenge"):
         print(
@@ -198,6 +276,8 @@ def cmd_probe(args) -> int:
 
 def cmd_reparse(args) -> int:
     """Rebuild from cached HTML - no network, so parser fixes are cheap to test."""
+    # Reparse reads only from the disk cache, so it never needs a browser.
+    args.browser = "never"
     client = make_client(args)
     collected: list[Strain] = []
 

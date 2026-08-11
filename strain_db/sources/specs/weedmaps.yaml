@@ -12,6 +12,11 @@ name: weedmaps
 base_url: https://weedmaps.com
 rating_scale: 5
 
+# Fetch through a real browser under `--browser auto`.
+# Weedmaps challenges plain HTTP clients; the browser also carries
+# the cookies its JSON API expects.
+requires_browser: true
+
 listing:
   mode: [api, sitemap, html]
 

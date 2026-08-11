@@ -13,6 +13,10 @@ name: leafly
 base_url: https://www.leafly.com
 rating_scale: 5
 
+# Fetch through a real browser under `--browser auto`.
+# Leafly serves a Cloudflare-class challenge to plain HTTP clients.
+requires_browser: true
+
 listing:
   mode: [sitemap, html]
   sitemaps:

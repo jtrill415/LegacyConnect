@@ -32,8 +32,9 @@ structure, not observed facts**.
 What that means concretely:
 
 - ✅ **Verified**: extraction strategies, normalization, dedup/merge, storage,
-  export, robots handling, caching, retries, and the CLI — 160 tests, including
-  an integration test that crawls a real local HTTP server end to end.
+  export, robots handling, caching, retries, the browser fetcher, and the CLI —
+  178 tests, including integration tests that crawl a real local HTTP server end
+  to end with both the plain and browser clients.
 - ❌ **Unverified**: whether `props.pageProps.strain` is really where Leafly
   keeps its data, whether `api-g.weedmaps.com/discovery/v1/strains` is really
   Weedmaps' catalogue endpoint, and every CSS selector in the four specs.
@@ -44,17 +45,56 @@ That is a ten-minute job, and `probe` exists to make it mechanical — see below
 Two further things you will hit on a real network, which no amount of selector
 tuning fixes:
 
-- **Bot protection.** Leafly and Weedmaps sit behind Cloudflare-class defenses.
-  A plain `requests` client will likely receive a challenge page instead of
-  content. `probe` detects this explicitly and says so (`looks_like_challenge`),
-  rather than letting it masquerade as a broken selector. Getting past it needs
-  a real browser (Playwright) or an official data agreement — deliberately out
-  of scope here.
+- **Bot protection.** Leafly and Weedmaps sit behind Cloudflare-class defenses,
+  which answer a plain `requests` call with a challenge page instead of content.
+  The Playwright-backed fetcher (below) handles this by driving a real browser.
+  `probe` also detects challenges explicitly (`looks_like_challenge`) rather
+  than letting one masquerade as a broken selector.
 - **Terms of service.** Leafly's and Weedmaps' ToS restrict automated
   collection. This tool honors `robots.txt` by default and rate-limits itself,
   but robots compliance is not the same as ToS compliance. Whether to crawl,
   and under what agreement, is your call to make — `--ignore-robots` exists but
   is off by default and warns when used.
+
+---
+
+## The browser fetcher
+
+For sites that refuse a plain HTTP client, `strain_db/browser.py` drives a real
+Chromium via Playwright, so the JS challenge executes and the page renders as a
+browser would see it.
+
+```bash
+pip install -e ".[browser]"     # Chromium: playwright install chromium
+strain-db crawl                 # --browser auto is the default
+```
+
+`--browser auto` (default) consults each site spec's `requires_browser` flag, so
+only Leafly and Weedmaps pay the browser cost while CannaConnection and
+SeedFinder keep the fast HTTP path. Force it either way with `--browser
+always` / `--browser never`, and watch it work with `--headful`.
+
+`BrowserClient` is a drop-in replacement for `http.Client` — same `get()`, same
+`FetchResult`, same cache, robots policy, and rate limiter. Nothing downstream
+of the fetch knows which one it is talking to, which is why this dropped in
+without touching extraction, normalization, merge, or storage. Both clients
+share one cache format, so a browser crawl is fully `reparse`-able offline.
+
+It also: reads `robots.txt` *through the browser* (a protected host can
+otherwise hide its rules and get treated as unrestricted by accident); waits out
+a challenge for a bounded window instead of storing the interstitial as content;
+and returns raw JSON for API endpoints rather than the `<pre>` a browser wraps
+them in.
+
+Two honest caveats. A page load is roughly an order of magnitude slower and
+heavier than an HTTP GET — use `auto`. And the browser path sends an ordinary
+desktop user-agent rather than the transparent `StrainDBBot` string the plain
+client uses, because a protected site rejects the latter outright; that is a
+real trade-off in transparency, and an official data agreement beats both.
+
+The tests in `tests/test_browser.py` drive real Chromium against a local server,
+including the case that justifies the module: a page whose content exists only
+after JS runs, which the plain client provably cannot see.
 
 ---
 
@@ -108,7 +148,9 @@ strain-db export strains.json --format json
 
 Useful flags: `--limit` (cap per source), `--no-merge` (keep per-source rows,
 for spec debugging), `--no-fuzzy` (exact-key dedup only), `--delay` (seconds
-between requests per host), `--dump-raw` (write every pre-merge record to JSONL).
+between requests per host), `--dump-raw` (write every pre-merge record to
+JSONL), `--browser auto|never|always` (see [The browser fetcher](#the-browser-fetcher)).
+Global flags work before or after the subcommand.
 
 ---
 
@@ -177,9 +219,10 @@ pip install -e ".[dev]"
 python -m pytest -q
 ```
 
-160 tests, no network required. `tests/test_integration.py` starts a real HTTP
-server on localhost and exercises the actual client — robots, cache, retries —
-plus the CLI end to end.
+178 tests, no external network required. `tests/test_integration.py` starts a
+real HTTP server on localhost and exercises the actual client — robots, cache,
+retries — plus the CLI end to end. `tests/test_browser.py` does the same with
+real Chromium, and skips cleanly when Playwright or a browser binary is absent.
 
 The fixtures in `tests/fixtures/` are **synthetic**. They mirror the shape each
 spec expects so the pipeline can be tested offline; they are not copies of real

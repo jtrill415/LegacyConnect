@@ -3,3 +3,5 @@ beautifulsoup4>=4.12
 lxml>=4.9
 PyYAML>=6.0
 pytest>=7.4
+# Optional: only needed for --browser (bot-protected sources)
+playwright>=1.40

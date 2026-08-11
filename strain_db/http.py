@@ -154,12 +154,16 @@ class RobotsPolicy:
     circular dependency, and cached in memory per host.
     """
 
-    def __init__(self, user_agent: str, respect: bool = True, session=None):
+    def __init__(self, user_agent: str, respect: bool = True, session=None, fetch_text=None):
         self.user_agent = user_agent
         self.respect = respect
         self._parsers: dict[str, urllib.robotparser.RobotFileParser | None] = {}
         self._lock = threading.Lock()
         self._session = session
+        #: Optional callable(url) -> str. The browser client passes one so that
+        #: robots.txt is fetched the same way as pages; a bot-protected site can
+        #: refuse a plain request for it.
+        self._fetch_text = fetch_text
 
     def _parser(self, url: str):
         parsed = urlparse(url)
@@ -170,7 +174,9 @@ class RobotsPolicy:
         rp = urllib.robotparser.RobotFileParser()
         robots_url = f"{host}/robots.txt"
         try:
-            if self._session is not None:
+            if self._fetch_text is not None:
+                rp.parse(self._fetch_text(robots_url).splitlines())
+            elif self._session is not None:
                 resp = self._session.get(robots_url, timeout=20)
                 if resp.status_code >= 400:
                     raise FetchError(str(resp.status_code))
@@ -321,3 +327,13 @@ class Client:
 
     def get_json(self, url: str, **kwargs):
         return self.get(url, **kwargs).json()
+
+    def close(self) -> None:
+        """Match BrowserClient's interface so callers can close either one."""
+        self.session.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc_info):
+        self.close()
